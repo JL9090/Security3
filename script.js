@@ -38,6 +38,18 @@
   }
 })();
 
+/* === Helpers === */
+// Map answer letters to option index.
+// Kept as a standalone helper so both embedded and imported banks can compute `correct` safely.
+function letterToIndex(letter){
+  const L = String(letter||"").trim().toUpperCase();
+  if(L==='A') return 0;
+  if(L==='B') return 1;
+  if(L==='C') return 2;
+  if(L==='D') return 3;
+  return -1;
+}
+
 function addTap(el, handler){
   if (!el) return;
   el.addEventListener('click', handler, false);
