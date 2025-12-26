@@ -1,4 +1,4 @@
-const CACHE_NAME = 'sy0701-quizzer-v5';
+const CACHE_NAME = 'sy0701-quizzer-v6';
 const ASSETS = [
   './',
   'index.html',
@@ -8,7 +8,9 @@ const ASSETS = [
   'logo.png',
   'logo-192.png',
   'logo-512.png',
-  'banner.jpg'
+  'banner.jpg',
+  'banks/banks.json',
+  'banks/sy0-701-bank.json'
 ];
 
 self.addEventListener('install', (e) => {
