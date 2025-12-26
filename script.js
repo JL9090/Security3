@@ -222,7 +222,9 @@ function normalizeQuestion(q, fallbackNum){
   out.q = out.q || out.question || "";
   out.options = Array.isArray(out.options) ? out.options.slice(0,4) : [out.A,out.B,out.C,out.D].filter(v=>v!==undefined);
   while(out.options.length<4) out.options.push("");
-  out.correctLetter = (out.correctLetter || out.correctAnswer || out.CorrectAnswer || "").toString().trim().toUpperCase();
+    out.correctLetter = (out.correctLetter || out.correctAnswer || out.CorrectAnswer || "").toString().trim().toUpperCase();
+  const _m = out.correctLetter.match(/[A-D]/);
+  out.correctLetter = _m ? _m[0] : "";
   if(!out.correct && out.correctLetter){
     const idx=letterToIndex(out.correctLetter);
     out.correct = out.options[idx] || out.correct;
@@ -413,11 +415,23 @@ function toQNum(id, fallback){
 function rowToQuestion(r, fallbackNum){
   const qNum = toQNum(r.QuestionID||r.QNum||r.qNum, fallbackNum);
   const qID = (r.QuestionID || `Q${String(qNum||fallbackNum).padStart(3,'0')}`);
-  const domain = Number(r.Domain||r.domain||0)||0;
-  const domainName = r.DomainName||r.domainName||"";
-  const q = r.Question||r.q||"";
-  const options = [r.A||"", r.B||"", r.C||"", r.D||""];
-  const correctLetter = (r.CorrectAnswer||r.correctLetter||r.correct||"").toString().trim().toUpperCase();
+
+  // Accept multiple header aliases so you can build CSVs however you like.
+  const domain = Number(r.Domain||r.domain||r.DomainNumber||r.domainNumber||0)||0;
+  const domainName = (r.DomainName||r.domainName||r.Domain_Label||r.DomainLabel||"").toString().trim();
+  const q = (r.Question||r.question||r.QuestionText||r.qText||r.q||"").toString().trim();
+
+  const a = (r.A||r.a||r.OptionA||r.AnswerA||r.ChoiceA||"").toString();
+  const b = (r.B||r.b||r.OptionB||r.AnswerB||r.ChoiceB||"").toString();
+  const c = (r.C||r.c||r.OptionC||r.AnswerC||r.ChoiceC||"").toString();
+  const d = (r.D||r.d||r.OptionD||r.AnswerD||r.ChoiceD||"").toString();
+  const options = [a,b,c,d];
+
+  // Correct can come as: "B", "B.", "B - ...", "A and D" (multi-answer). We take the first A–D.
+  const rawCorrect = (r.CorrectAnswer||r.correctLetter||r.correct||r.Correct||r.Answer||r.CorrectLetter||"").toString().trim().toUpperCase();
+  const mc = rawCorrect.match(/[A-D]/);
+  const correctLetter = mc ? mc[0] : "";
+
   const qq={
     QuestionID: qID,
     qNum,
@@ -428,13 +442,15 @@ function rowToQuestion(r, fallbackNum){
     correctLetter,
     correct: correctLetter ? options[letterToIndex(correctLetter)] : "",
     ref: domain ? `Domain ${domain}: ${domainName}` : "",
-    difficulty: (r.Difficulty||"Medium").toString().trim(),
-    objective: (r.Objective||"").toString().trim(),
-    rationaleCorrect: r.RationaleCorrect||"",
-    rationaleA: r.RationaleA||"",
-    rationaleB: r.RationaleB||"",
-    rationaleC: r.RationaleC||"",
-    rationaleD: r.RationaleD||"",
+    difficulty: (r.Difficulty||r.difficulty||"Medium").toString().trim(),
+    objective: (r.Objective||r.objective||"").toString().trim(),
+
+    // Rationales / explanations (many possible header names)
+    rationaleCorrect: (r.RationaleCorrect||r.rationaleCorrect||r.Explanation||r.explanation||r.Rationale||"").toString(),
+    rationaleA: (r.RationaleA||r.rationaleA||r.WhyA||r.explainA||"").toString(),
+    rationaleB: (r.RationaleB||r.rationaleB||r.WhyB||r.explainB||"").toString(),
+    rationaleC: (r.RationaleC||r.rationaleC||r.WhyC||r.explainC||"").toString(),
+    rationaleD: (r.RationaleD||r.rationaleD||r.WhyD||r.explainD||"").toString(),
   };
   return normalizeQuestion(qq, qNum);
 }
@@ -446,27 +462,52 @@ function stageBankFromFile(file){
   importState.loading = true;
   importState.bank = null;
   importState.csvText = null;
-  importState.messages = [`Reading CSV: ${file.name}...`];
+  importState.messages = [`Reading bank file: ${file.name}...`];
   updateBankStatus();
 
   const reader = new FileReader();
   reader.onload = () => {
     try{
       const rawText = String(reader.result||"");
-      const {objs, headers} = parseCSV(rawText);
+      // Support either CSV or JSON bank files.
+      // JSON supported shapes:
+      //  1) An array of row objects (same keys as the CSV headers), OR
+      //  2) { questions: [ ... ] }
+      let objs = [];
+      let headers = [];
+      const name = String(file?.name||"").toLowerCase();
+      const trimmed = rawText.trim();
+      const looksJson = name.endsWith('.json') || trimmed.startsWith('{') || trimmed.startsWith('[');
+      if(looksJson){
+        try{
+          const j = JSON.parse(rawText);
+          const arr = Array.isArray(j) ? j : (Array.isArray(j?.questions) ? j.questions : null);
+          if(!arr) throw new Error('JSON bank must be an array of question rows or an object with a questions[] array.');
+          objs = arr;
+          headers = Object.keys(arr[0]||{});
+        }catch(jsonErr){
+          // If JSON parse fails, fall back to CSV parsing.
+          const parsed = parseCSV(rawText);
+          objs = parsed.objs; headers = parsed.headers;
+        }
+      }else{
+        const parsed = parseCSV(rawText);
+        objs = parsed.objs; headers = parsed.headers;
+      }
+
       importState.bank = objs.map((r,i)=>rowToQuestion(r, i+1));
       importState.csvText = rawText;
       importState.loading = false;
       const hasRationale = headers.includes('RationaleCorrect') || headers.includes('RationaleA') || headers.includes('CorrectAnswer') || headers.includes('Correct') || headers.includes('CorrectLetter');
       importState.messages = [
-        `Loaded bank CSV: ${file.name}`,
+        `Loaded bank file: ${file.name}`,
         `Staged bank: ${importState.bank.length}`,
         hasRationale ? 'Includes answers and rationales.' : 'Questions-only detected (no rationales found).',
         'Click Load Imported Bank to apply.'
       ];
     }catch(err){
       importState.loading = false;
-      importState.messages = [`Bank CSV parse failed: ${err?.message||err}`];
+      importState.messages = [`Bank file parse failed: ${err?.message||err}`];
       importState.bank = null;
       importState.csvText = null;
     }
