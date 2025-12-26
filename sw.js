@@ -1,4 +1,4 @@
-const CACHE_NAME = 'sy0701-quizzer-v6';
+const CACHE_NAME = 'sy0701-quizzer-v7';
 const ASSETS = [
   './',
   'index.html',

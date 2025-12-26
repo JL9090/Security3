@@ -340,9 +340,11 @@ async function loadSelectedBankFromDropdown(){
 function normalizeQuestion(q, fallbackNum){
   const out={...q};
   out.qNum = Number(out.qNum||fallbackNum||0);
-  out.domain = Number(out.domain||0)||0;
-  out.domainName = out.domainName || out.domain_name || "";
-  out.q = out.q || out.question || "";
+  // Support multiple input shapes (embedded, CSV/JSON import, repo-bank JSON)
+  // Repo-bank JSON uses TitleCase keys like Domain, DomainName, Question.
+  out.domain = Number(out.domain ?? out.Domain ?? 0) || 0;
+  out.domainName = (out.domainName || out.domain_name || out.DomainName || "").toString();
+  out.q = (out.q || out.question || out.Question || out.prompt || out.Prompt || "").toString();
   out.options = Array.isArray(out.options) ? out.options.slice(0,4) : [out.A,out.B,out.C,out.D].filter(v=>v!==undefined);
   while(out.options.length<4) out.options.push("");
     out.correctLetter = (out.correctLetter || out.correctAnswer || out.CorrectAnswer || "").toString().trim().toUpperCase();
